@@ -49,6 +49,7 @@ export default function HLSPlayer({ url, name, logo, group }: HLSPlayerProps) {
 
   // Restart loading state and Hls player on URL change
   useEffect(() => {
+    let active = true;
     setErrorMsg(null);
     setIsLoading(true);
     setLevels([]);
@@ -74,20 +75,34 @@ export default function HLSPlayer({ url, name, logo, group }: HLSPlayerProps) {
       video.addEventListener("waiting", handleWaiting);
       video.addEventListener("playing", handlePlaying);
 
-      // Trigger play
-      video.play()
-        .then(() => setIsPlaying(true))
-        .catch((err) => {
-          console.warn("Muted autoplay triggered or user block: ", err);
-          // Try playing muted
-          video.muted = true;
-          setIsMuted(true);
-          video.play()
-            .then(() => setIsPlaying(true))
-            .catch((e) => console.error("Playback block:", e));
-        });
+      // Trigger play safely
+      const playPromise = video.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            if (active) setIsPlaying(true);
+          })
+          .catch((err) => {
+            if (!active) return;
+            console.warn("Muted autoplay triggered or user block: ", err);
+            // Try playing muted
+            video.muted = true;
+            setIsMuted(true);
+            const secondPromise = video.play();
+            if (secondPromise !== undefined) {
+              secondPromise
+                .then(() => {
+                  if (active) setIsPlaying(true);
+                })
+                .catch((e) => {
+                  if (active) console.error("Playback block:", e);
+                });
+            }
+          });
+      }
 
       return () => {
+        active = false;
         video.removeEventListener("loadedmetadata", handleLoadedMetadata);
         video.removeEventListener("error", handleNativeError);
         video.removeEventListener("waiting", handleWaiting);
@@ -108,6 +123,7 @@ export default function HLSPlayer({ url, name, logo, group }: HLSPlayerProps) {
       hls.attachMedia(video);
 
       hls.on(Hls.Events.MANIFEST_PARSED, (_, data) => {
+        if (!active) return;
         setIsLoading(false);
         setErrorMsg(null);
         
@@ -118,23 +134,39 @@ export default function HLSPlayer({ url, name, logo, group }: HLSPlayerProps) {
         }));
         setLevels(hlsLevels);
 
-        video.play()
-          .then(() => setIsPlaying(true))
-          .catch(() => {
-            // Unmuted autoplay blocked, try playing muted
-            video.muted = true;
-            setIsMuted(true);
-            video.play()
-              .then(() => setIsPlaying(true))
-              .catch((e) => console.error("Unmuted playback blocked", e));
-          });
+        const playPromise = video.play();
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              if (active) setIsPlaying(true);
+            })
+            .catch(() => {
+              if (!active) return;
+              // Unmuted autoplay blocked, try playing muted
+              video.muted = true;
+              setIsMuted(true);
+              const secondPromise = video.play();
+              if (secondPromise !== undefined) {
+                secondPromise
+                  .then(() => {
+                    if (active) setIsPlaying(true);
+                  })
+                  .catch((e) => {
+                    if (active) console.error("Unmuted playback blocked", e);
+                  });
+              }
+            });
+        }
       });
 
       hls.on(Hls.Events.LEVEL_SWITCHED, (_, data) => {
-        setCurrentLevel(hls.currentLevel);
+        if (active) {
+          setCurrentLevel(hls.currentLevel);
+        }
       });
 
       hls.on(Hls.Events.ERROR, (_, data) => {
+        if (!active) return;
         console.warn("HLS ERROR:", data);
         if (data.fatal) {
           switch (data.type) {
@@ -156,6 +188,7 @@ export default function HLSPlayer({ url, name, logo, group }: HLSPlayerProps) {
       });
 
       return () => {
+        active = false;
         if (hlsRef.current) {
           hlsRef.current.destroy();
           hlsRef.current = null;
