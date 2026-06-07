@@ -1,0 +1,6 @@
+{
+  "name": "TORIKUL- IPTV",
+  "description": "Premium IPTV Streaming Platform with HLS playback, live search, favorites and personalized categories.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
